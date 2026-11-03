@@ -44,14 +44,11 @@ Architecture and privacy model: README.md. Working rules for Claude: CLAUDE.md.
 4. **Delete** (own photo / admin) and that the blob is removed too.
 5. Multi-photo upload on a slow phone — watch memory; the pipeline is sequential.
 
-## Known oddity to resolve
+## Resolved
 
-`/api/health` once reported `counts: {profiles:0, photos:0}` on build 24e1f35 while
-`/api/photos` on the same deployment returned the saved photo. Build da80cb8 adds
-`dbName`, `dbServer`, `dbVars` (host per connection-string var) and `newestPhoto` to
-health. Compare that output with `/api/photos`: if hosts differ, two databases are
-in play (Neon preview vs production branch?). If they match and counts are right,
-it was a transient and can be ignored.
+`/api/health` once showed zero counts while `/api/photos` had a row. Re-checked on
+build da80cb8: one database (`neondb`, `ep-silent-darkness-…`), counts correct
+(profiles 1, photos 1). Transient; nothing to do.
 
 ## Open items / ideas, in rough priority
 
