@@ -340,15 +340,22 @@ export function Album({ tripName }: { tripName: string }) {
               {counts.all ? `${counts.all} photo${counts.all === 1 ? '' : 's'} and counting` : 'The shared album'}
             </p>
           </div>
-          <button
-            onClick={() => setSheet('profile')}
-            aria-label="Your profile"
-            className={`mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border font-semibold ${
-              me ? 'border-honey/50 bg-honey/15 text-honey' : 'border-white/15 bg-white/5 text-cream/60'
-            }`}
-          >
-            {me ? initials(me.name) : '?'}
-          </button>
+          {me ? (
+            <button
+              onClick={() => setSheet('profile')}
+              aria-label="Your profile"
+              className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-honey/50 bg-honey/15 font-semibold text-honey"
+            >
+              {initials(me.name)}
+            </button>
+          ) : (
+            <button
+              onClick={() => setSheet('profile')}
+              className="mt-1 shrink-0 rounded-full border border-white/20 bg-white/5 px-4 py-2.5 text-sm font-semibold text-cream/85"
+            >
+              Sign in
+            </button>
+          )}
         </div>
       </header>
 
