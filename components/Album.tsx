@@ -323,12 +323,19 @@ export function Album({ tripName }: { tripName: string }) {
         <div className="flex items-start justify-between gap-4">
           <div>
             {logoOk ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src="/logo.png" alt="Cazcabel" className="h-9 w-auto max-w-[180px]" />
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/logo.png" alt="Cazcabel" className="h-24 w-auto" />
+                <h1 className="mt-3 font-display text-3xl leading-none tracking-[0.08em] text-cream">
+                  {tripName.replace(/cazcabel\s*/i, '')}
+                </h1>
+              </>
             ) : (
-              <div className="font-display text-4xl leading-none tracking-[0.12em] text-honey">CAZCABEL</div>
+              <>
+                <div className="font-display text-4xl leading-none tracking-[0.12em] text-honey">CAZCABEL</div>
+                <h1 className="mt-2 font-display text-5xl leading-[0.9] tracking-wide text-cream">{tripName}</h1>
+              </>
             )}
-            <h1 className="mt-2 font-display text-5xl leading-[0.9] tracking-wide text-cream">{tripName}</h1>
             <p className="mt-1 text-xs uppercase tracking-[0.3em] text-sand/60">
               {counts.all ? `${counts.all} photo${counts.all === 1 ? '' : 's'} and counting` : 'The shared album'}
             </p>

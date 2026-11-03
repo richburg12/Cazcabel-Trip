@@ -7,8 +7,8 @@ html, body { height: 100%; }
 body {
   @apply bg-ink text-cream antialiased;
   background-image:
-    radial-gradient(1200px 500px at 50% -200px, rgba(224, 166, 58, 0.14), transparent 60%),
-    radial-gradient(800px 400px at 100% 100%, rgba(228, 87, 61, 0.08), transparent 60%);
+    radial-gradient(1200px 500px at 50% -200px, rgba(37, 76, 91, 0.9), transparent 60%),
+    radial-gradient(800px 400px at 100% 100%, rgba(224, 166, 58, 0.10), transparent 60%);
   background-attachment: fixed;
   -webkit-tap-highlight-color: transparent;
 }

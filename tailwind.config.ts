@@ -5,9 +5,12 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: '#0b0908',
-        smoke: '#19150f',
-        ash: '#2a241c',
+        // Brand teal (#254c5b from the logo) pulled deep for the page, with
+        // tequila gold as the accent.
+        ink: '#0f2129',
+        smoke: '#1a333c',
+        ash: '#27454f',
+        teal: '#254c5b',
         cream: '#f4ead6',
         sand: '#cdb892',
         honey: '#e0a63a',
