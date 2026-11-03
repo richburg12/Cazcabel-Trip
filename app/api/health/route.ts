@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 import { ensureSchema } from '@/lib/db';
-import { blobTokenName } from '@/lib/blob';
+import { blobCheck, blobMode } from '@/lib/blob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,7 +16,8 @@ export async function GET() {
     tokenVarsSeen: Object.keys(process.env).filter((k) => /BLOB|READ_WRITE|STORE/i.test(k)),
     albumToken: !!process.env.ALBUM_TOKEN,
     adminCode: !!process.env.ADMIN_CODE,
-    blobToken: blobTokenName() || false,
+    blobMode: blobMode(),
+    blob: await blobCheck(),
     postgresUrl: !!(process.env.POSTGRES_URL || process.env.DATABASE_URL),
   };
   try {

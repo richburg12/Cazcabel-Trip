@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { upload } from '@vercel/blob/client';
+import { upload, uploadPresigned } from '@vercel/blob/client';
 import type { Photo } from '@/lib/db';
 import { detectFaces, loadFaceApi } from '@/lib/client/face';
 import { decode, drawScaled, readTakenAt, slug, toJpeg } from '@/lib/client/image';
@@ -53,6 +53,7 @@ export function Album({ tripName }: { tripName: string }) {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [uploadMode, setUploadMode] = useState<'presigned' | 'token'>('presigned');
   const [logoOk, setLogoOk] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const selfieRef = useRef<HTMLInputElement>(null);
@@ -73,7 +74,10 @@ export function Album({ tripName }: { tripName: string }) {
   useEffect(() => {
     fetch('/api/me')
       .then((r) => r.json())
-      .then((d) => setMe(d.me ? { ...d.me, isAdmin: d.isAdmin ?? d.me.isAdmin } : null))
+      .then((d) => {
+        setMe(d.me ? { ...d.me, isAdmin: d.isAdmin ?? d.me.isAdmin } : null);
+        if (d.uploadMode === 'token') setUploadMode('token');
+      })
       .catch(() => setMe(null));
   }, []);
 
@@ -150,9 +154,10 @@ export function Album({ tripName }: { tripName: string }) {
         const facesP = detectFaces(big).catch(() => []);
         let b, s;
         try {
+          const put = uploadMode === 'token' ? upload : uploadPresigned;
           [b, s] = await Promise.all([
-            upload(`${base}.jpg`, bigJpeg.blob, { access: 'public', handleUploadUrl: '/api/upload', contentType: 'image/jpeg' }),
-            upload(`${base}-thumb.jpg`, smallJpeg.blob, { access: 'public', handleUploadUrl: '/api/upload', contentType: 'image/jpeg' }),
+            put(`${base}.jpg`, bigJpeg.blob, { access: 'public', handleUploadUrl: '/api/upload', contentType: 'image/jpeg' }),
+            put(`${base}-thumb.jpg`, smallJpeg.blob, { access: 'public', handleUploadUrl: '/api/upload', contentType: 'image/jpeg' }),
           ]);
         } catch (e) {
           throw new Error(`Upload to storage failed: ${e instanceof Error ? e.message : String(e)}`);

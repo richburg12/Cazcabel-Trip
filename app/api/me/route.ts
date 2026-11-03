@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMe, isAdmin } from '@/lib/auth';
 import { ensureSchema, getProfile, setProfileDescriptor } from '@/lib/db';
+import { blobMode } from '@/lib/blob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,11 +13,13 @@ function validDescriptor(d: unknown): d is number[] {
 export async function GET() {
   const me = await getMe();
   const admin = await isAdmin();
-  if (!me) return NextResponse.json({ me: null, isAdmin: admin });
+  // Which browser upload flow matches how the Blob store is connected.
+  const uploadMode = blobMode() === 'token' ? 'token' : 'presigned';
+  if (!me) return NextResponse.json({ me: null, isAdmin: admin, uploadMode });
   await ensureSchema();
   const p = await getProfile(me.id);
-  if (!p) return NextResponse.json({ me: null, isAdmin: admin });
-  return NextResponse.json({ me: { id: p.id, name: p.name, hasFace: p.has_face, isAdmin: admin } });
+  if (!p) return NextResponse.json({ me: null, isAdmin: admin, uploadMode });
+  return NextResponse.json({ me: { id: p.id, name: p.name, hasFace: p.has_face, isAdmin: admin }, uploadMode });
 }
 
 // Save (or replace) the face fingerprint from the user's own selfie.
