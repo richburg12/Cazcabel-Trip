@@ -477,8 +477,14 @@ function ProfileSheet({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, pin }),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Could not sign in');
+      const text = await r.text();
+      let d: { error?: string; me?: Me } = {};
+      try {
+        d = JSON.parse(text);
+      } catch {
+        /* non-JSON error page */
+      }
+      if (!r.ok || !d.me) throw new Error(d.error || `Server error ${r.status}. Open /api/health to see what's missing.`);
       setPin('');
       onSignedIn(d.me);
     } catch (e) {
@@ -513,10 +519,9 @@ function ProfileSheet({
           <input
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            className={`${field} ${pin ? 'tracking-[0.5em]' : ''}`}
+            className={`${field} ${pin ? 'tracking-[0.3em]' : ''}`}
             placeholder="PIN (4–6 digits)"
             inputMode="numeric"
-            pattern="\d*"
             autoComplete="off"
             required
           />

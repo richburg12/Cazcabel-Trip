@@ -16,7 +16,15 @@ export async function POST(req: NextRequest) {
   if (name.length < 2) return NextResponse.json({ error: 'Please enter your name.' }, { status: 400 });
   if (!/^\d{4,6}$/.test(pin)) return NextResponse.json({ error: 'PIN must be 4 to 6 digits.' }, { status: 400 });
 
-  await ensureSchema();
+  try {
+    await ensureSchema();
+  } catch (e) {
+    console.error('Database not ready:', e);
+    return NextResponse.json(
+      { error: `Database problem: ${e instanceof Error ? e.message : 'unknown'}. Check Storage in Vercel.` },
+      { status: 500 }
+    );
+  }
   let profile = await getProfileByName(name);
   let created = false;
   if (profile) {
