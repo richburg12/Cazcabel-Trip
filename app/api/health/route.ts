@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 import { ensureSchema } from '@/lib/db';
+import { blobTokenName } from '@/lib/blob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,7 +12,7 @@ export async function GET() {
   const out: Record<string, unknown> = {
     albumToken: !!process.env.ALBUM_TOKEN,
     adminCode: !!process.env.ADMIN_CODE,
-    blobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
+    blobToken: blobTokenName() || false,
     postgresUrl: !!(process.env.POSTGRES_URL || process.env.DATABASE_URL),
   };
   try {
