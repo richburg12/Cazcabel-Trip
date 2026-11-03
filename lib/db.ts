@@ -32,7 +32,10 @@ export function ensureSchema(): Promise<void> {
         descriptor vector(128) NOT NULL,
         box JSONB
       )`;
+      await sql`ALTER TABLE photos ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}'`;
+      await sql`ALTER TABLE photos ADD COLUMN IF NOT EXISTS tagged_at TIMESTAMPTZ`;
       await sql`CREATE INDEX IF NOT EXISTS idx_photos_sort ON photos (COALESCE(taken_at, created_at) DESC, id DESC)`;
+      await sql`CREATE INDEX IF NOT EXISTS idx_photos_tags ON photos USING GIN (tags)`;
       await sql`CREATE INDEX IF NOT EXISTS idx_faces_photo ON faces (photo_id)`;
     })().catch((e) => {
       ready = null;
@@ -61,6 +64,8 @@ export interface Photo {
   taken_at: string | null;
   faces_count: number;
   category: 'people' | 'group' | 'scenery';
+  tags: string[];
+  tagged_at: string | null;
   created_at: string;
   dist?: number;
 }
@@ -102,30 +107,53 @@ export async function setProfileDescriptor(id: string, descriptor: number[] | nu
 }
 
 const PHOTO_COLS = `p.id, p.profile_id, pr.name AS uploader, p.url, p.thumb_url, p.width, p.height,
-  p.taken_at, p.faces_count, p.category, p.created_at`;
+  p.taken_at, p.faces_count, p.category, p.tags, p.tagged_at, p.created_at`;
 
-export async function listPhotos(opts: { category?: Category; before?: string; limit: number }): Promise<Photo[]> {
+export async function listPhotos(opts: { category?: Category; tag?: string; before?: string; limit: number }): Promise<Photo[]> {
   // Sorted newest first by when the photo was taken (upload time if unknown).
   // `before` is the sort key of the last row seen: "<iso>|<id>".
   const [bTime, bId] = (opts.before || '').split('|');
   const { rows } = await sql.query<Photo>(
     `SELECT ${PHOTO_COLS} FROM photos p JOIN profiles pr ON pr.id = p.profile_id
      WHERE ($1::text IS NULL OR p.category = $1)
+       AND ($5::text IS NULL OR $5 = ANY(p.tags))
        AND ($2::timestamptz IS NULL OR (COALESCE(p.taken_at, p.created_at), p.id) < ($2::timestamptz, $3::uuid))
      ORDER BY COALESCE(p.taken_at, p.created_at) DESC, p.id DESC
      LIMIT $4`,
-    [opts.category || null, bTime || null, bId || null, opts.limit]
+    [opts.category || null, bTime || null, bId || null, opts.limit, opts.tag || null]
   );
   return rows;
 }
 
+export async function setPhotoTags(id: string, tags: string[]) {
+  await sql`UPDATE photos SET tags = ${`{${tags.join(',')}}`}::text[], tagged_at = NOW() WHERE id = ${id}`;
+}
+
+export async function listUntagged(limit: number): Promise<Photo[]> {
+  const { rows } = await sql.query<Photo>(
+    `SELECT ${PHOTO_COLS} FROM photos p JOIN profiles pr ON pr.id = p.profile_id
+     WHERE p.tagged_at IS NULL ORDER BY p.created_at DESC LIMIT $1`,
+    [limit]
+  );
+  return rows;
+}
+
+export async function countUntagged(): Promise<number> {
+  const { rows } = await sql<{ n: number }>`SELECT COUNT(*)::int AS n FROM photos WHERE tagged_at IS NULL`;
+  return rows[0].n;
+}
+
 export async function countsByCategory(): Promise<Record<string, number>> {
-  const { rows } = await sql<{ category: string; n: number }>`SELECT category, COUNT(*)::int AS n FROM photos GROUP BY category`;
+  const [{ rows }, { rows: tagRows }] = await Promise.all([
+    sql<{ category: string; n: number }>`SELECT category, COUNT(*)::int AS n FROM photos GROUP BY category`,
+    sql<{ tag: string; n: number }>`SELECT t AS tag, COUNT(*)::int AS n FROM photos, unnest(tags) AS t GROUP BY t`,
+  ]);
   const out: Record<string, number> = { all: 0 };
   for (const r of rows) {
     out[r.category] = r.n;
     out.all += r.n;
   }
+  for (const r of tagRows) out[`tag:${r.tag}`] = r.n;
   return out;
 }
 

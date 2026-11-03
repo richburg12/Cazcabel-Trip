@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMe, isAdmin } from '@/lib/auth';
-import { ensureSchema, listPhotos, insertPhoto, countsByCategory, type Category } from '@/lib/db';
+import { ensureSchema, listPhotos, insertPhoto, countsByCategory, setPhotoTags, type Category } from '@/lib/db';
+import { isTagId, tagPhoto, taggingEnabled } from '@/lib/tags';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const CATS: Category[] = ['people', 'group', 'scenery'];
 const PAGE = 90;
@@ -12,9 +14,10 @@ export async function GET(req: NextRequest) {
   await ensureSchema();
   const url = new URL(req.url);
   const cat = url.searchParams.get('category') as Category | null;
+  const tag = url.searchParams.get('tag');
   const before = url.searchParams.get('before') || undefined;
   const [photos, counts] = await Promise.all([
-    listPhotos({ category: cat && CATS.includes(cat) ? cat : undefined, before, limit: PAGE }),
+    listPhotos({ category: cat && CATS.includes(cat) ? cat : undefined, tag: isTagId(tag) ? tag : undefined, before, limit: PAGE }),
     before ? Promise.resolve(null) : countsByCategory(),
   ]);
   const last = photos[photos.length - 1];
@@ -58,5 +61,16 @@ export async function POST(req: NextRequest) {
     taken_at: takenAt,
     faces: faces.map((f: { descriptor: number[]; box?: unknown }) => ({ descriptor: f.descriptor, box: f.box ?? null })),
   });
+  // Scene tags (Distillery, Food & drink, ...) from a quick look at the
+  // thumbnail. Best effort: a failure leaves the photo untagged for backfill.
+  if (taggingEnabled()) {
+    try {
+      const tags = await tagPhoto(photo.thumb_url);
+      await setPhotoTags(photo.id, tags);
+      photo.tags = tags;
+    } catch (e) {
+      console.error('Tagging failed for', photo.id, e);
+    }
+  }
   return NextResponse.json({ photo, isAdmin: await isAdmin() });
 }

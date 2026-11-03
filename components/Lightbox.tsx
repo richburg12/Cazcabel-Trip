@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Photo } from '@/lib/db';
 import { btnDanger, btnGhost } from './Sheet';
+import { tagLabel } from '@/lib/tag-list';
 
 const when = (p: Photo) => {
   const d = new Date(p.taken_at || p.created_at);
@@ -73,7 +74,12 @@ export function Lightbox({
           <span>
             <span className="font-semibold text-cream/90">{p.uploader}</span> · {when(p)}
           </span>
-          <span>{p.faces_count === 0 ? 'No faces' : p.faces_count === 1 ? '1 face' : `${p.faces_count} faces`}</span>
+          <span>
+            {(p.tags || []).map((t) => (
+              <span key={t} className="mr-1 rounded-full border border-honey/30 px-2 py-0.5 text-[10px] text-honey/90">{tagLabel(t)}</span>
+            ))}
+            {p.faces_count === 0 ? 'No faces' : p.faces_count === 1 ? '1 face' : `${p.faces_count} faces`}
+          </span>
         </div>
         <div className="mt-3 flex gap-2">
           <a href={p.url} target="_blank" rel="noreferrer" className={`${btnGhost} flex-1 text-sm`}>

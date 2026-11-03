@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 import { ensureSchema } from '@/lib/db';
 import { blobCheck, blobMode } from '@/lib/blob';
+import { taggingEnabled } from '@/lib/tags';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,7 @@ export async function GET() {
     blobMode: blobMode(),
     blob: await blobCheck(),
     postgresUrl: !!(process.env.POSTGRES_URL || process.env.DATABASE_URL),
+    sceneTagging: taggingEnabled() ? 'on' : 'off (set ANTHROPIC_API_KEY)',
   };
   try {
     await ensureSchema();

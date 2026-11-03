@@ -17,6 +17,12 @@ camera roll, the album sorts photos into **People / Groups / Scenery**, and
   removable with one tap ("Forget my face").
 - **Categories** fall out of the face count: 0 faces → Scenery, 5+ → Groups,
   otherwise People.
+- **Scene tags** (Distillery, Agave fields, Food & drink, Nightlife, Pool & beach,
+  Town, On the move) are assigned by Claude looking at the thumbnail right after
+  upload, and each tag with photos becomes a tab. Needs `ANTHROPIC_API_KEY`; without
+  it the album works, just without those tabs. The admin sheet has a button to tag
+  photos uploaded before the key was set. Tag list: `lib/tag-list.ts`; the
+  descriptions Claude uses: `lib/tags.ts`.
 
 ## Deploy (Vercel, ~5 minutes)
 
@@ -28,6 +34,7 @@ camera roll, the album sorts photos into **People / Groups / Scenery**, and
    | `ALBUM_TOKEN` | long random string — this becomes the secret link |
    | `ADMIN_CODE` | your private code for deleting any photo |
    | `NEXT_PUBLIC_TRIP_NAME` | optional header, default "The Cazcabel Trip" |
+   | `ANTHROPIC_API_KEY` | optional, from console.anthropic.com — turns on scene tags |
 
 3. **Storage tab → Create** a **Blob** store and a **Postgres** (Neon) database,
    both connected to the project. They inject `BLOB_READ_WRITE_TOKEN` and

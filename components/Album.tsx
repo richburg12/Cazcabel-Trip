@@ -7,6 +7,7 @@ import { detectFaces, loadFaceApi } from '@/lib/client/face';
 import { decode, drawScaled, readTakenAt, slug, toJpeg } from '@/lib/client/image';
 import { Lightbox } from './Lightbox';
 import { Sheet, btnDanger, btnGhost, btnPrimary, field } from './Sheet';
+import { TAGS, tagLabel } from '@/lib/tag-list';
 
 interface Me {
   id: string;
@@ -15,14 +16,24 @@ interface Me {
   isAdmin: boolean;
 }
 
-type Tab = 'all' | 'people' | 'group' | 'scenery' | 'me';
-const TABS: { id: Tab; label: string }[] = [
+type Tab = 'all' | 'people' | 'group' | 'scenery' | 'me' | `tag:${string}`;
+// Fixed tabs; scene-tag tabs (Distillery, Food & drink, ...) are appended when
+// photos carry them. Distillery is the headline, so it goes right after Find me.
+const FIXED: { id: Tab; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'me', label: 'Find me' },
+  { id: 'tag:distillery', label: 'Distillery' },
   { id: 'people', label: 'People' },
   { id: 'group', label: 'Groups' },
   { id: 'scenery', label: 'Scenery' },
 ];
+function buildTabs(counts: Record<string, number>): { id: Tab; label: string }[] {
+  const extra = TAGS.filter((t) => t.id !== 'distillery' && counts[`tag:${t.id}`] > 0).map((t) => ({
+    id: `tag:${t.id}` as Tab,
+    label: t.label,
+  }));
+  return [...FIXED.filter((t) => t.id !== 'tag:distillery' || counts['tag:distillery'] > 0), ...extra];
+}
 
 interface Progress {
   done: number;
@@ -96,7 +107,8 @@ export function Album({ tripName }: { tripName: string }) {
           setNext(null);
         } else {
           const q = new URLSearchParams();
-          if (t !== 'all') q.set('category', t);
+          if (t.startsWith('tag:')) q.set('tag', t.slice(4));
+          else if (t !== 'all') q.set('category', t);
           if (before) q.set('before', before);
           const d = await (await fetch(`/api/photos?${q}`)).json();
           setPhotos((prev) => (before ? [...prev, ...d.photos] : d.photos));
@@ -200,7 +212,10 @@ export function Album({ tripName }: { tripName: string }) {
     if (prog.failed) setLastError(prog.lastError || 'Unknown error');
     if (added.length) {
       // Show them straight away at the top of the current view, then refresh counts.
-      setPhotos((prev) => [...added.filter((p) => tab === 'all' || p.category === tab), ...prev]);
+      setPhotos((prev) => [
+        ...added.filter((p) => tab === 'all' || p.category === tab || (tab.startsWith('tag:') && (p.tags || []).includes(tab.slice(4)))),
+        ...prev,
+      ]);
       load(tab);
     }
     say(prog.failed ? `${added.length} added · ${prog.failed} failed` : `${added.length} photo${added.length === 1 ? '' : 's'} added 🎉`);
@@ -298,7 +313,7 @@ export function Album({ tripName }: { tripName: string }) {
 
       {/* Tabs */}
       <nav className="no-scrollbar sticky top-0 z-20 mt-5 flex gap-2 overflow-x-auto bg-ink/85 px-5 py-3 backdrop-blur">
-        {TABS.map((t) => {
+        {buildTabs(counts).map((t) => {
           const active = tab === t.id;
           const n = t.id === 'all' ? counts.all : t.id === 'me' ? undefined : counts[t.id];
           return (
@@ -343,7 +358,7 @@ export function Album({ tripName }: { tripName: string }) {
           ) : (
             <>
               <p className="font-display text-3xl tracking-wide text-cream/60">Nothing here yet</p>
-              <p className="mt-2 text-sm">Be the first — tap Add photos.</p>
+              <p className="mt-2 text-sm">{tab.startsWith('tag:') ? 'No photos have been tagged with this yet.' : 'Be the first — tap Add photos.'}</p>
             </>
           )}
         </div>
@@ -588,7 +603,10 @@ function ProfileSheet({
         </div>
 
         {me.isAdmin ? (
-          <p className="text-center text-xs text-honey/80">Admin mode on · you can delete any photo</p>
+          <>
+            <p className="text-center text-xs text-honey/80">Admin mode on · you can delete any photo</p>
+            <BackfillButton />
+          </>
         ) : showAdmin ? (
           <form onSubmit={adminSubmit} className="flex gap-2">
             <input value={code} onChange={(e) => setCode(e.target.value)} className={field} placeholder="Admin code" autoFocus />
@@ -607,5 +625,61 @@ function ProfileSheet({
         </div>
       </div>
     </Sheet>
+  );
+}
+
+
+// Admin: tag photos uploaded before scene tagging was switched on.
+function BackfillButton() {
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [enabled, setEnabled] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    fetch('/api/tags/backfill')
+      .then((r) => r.json())
+      .then((d) => {
+        setRemaining(d.remaining ?? 0);
+        setEnabled(d.enabled !== false);
+      })
+      .catch(() => {});
+  }, []);
+
+  const run = async () => {
+    setRunning(true);
+    setNote('');
+    try {
+      let left = remaining ?? 0;
+      let failures = 0;
+      while (left > 0) {
+        const r = await fetch('/api/tags/backfill', { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Tagging failed');
+        failures += d.failed || 0;
+        if (d.done === 0 && d.failed > 0) throw new Error('Tagging keeps failing; check the API key.');
+        left = d.remaining;
+        setRemaining(left);
+      }
+      setNote(failures ? `Done, ${failures} could not be tagged.` : 'All photos tagged.');
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Tagging failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  if (remaining == null) return null;
+  if (!enabled) return <p className="text-center text-xs text-cream/40">Scene tagging is off (ANTHROPIC_API_KEY not set).</p>;
+  if (remaining === 0 && !note) return <p className="text-center text-xs text-cream/40">All photos have scene tags.</p>;
+  return (
+    <div className="text-center">
+      {remaining > 0 && (
+        <button onClick={run} disabled={running} className={`${btnGhost} w-full text-sm`}>
+          {running ? `Tagging… ${remaining} left` : `Tag ${remaining} older photo${remaining === 1 ? '' : 's'}`}
+        </button>
+      )}
+      {note && <p className="mt-2 text-xs text-cream/50">{note}</p>}
+    </div>
   );
 }
