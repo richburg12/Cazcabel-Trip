@@ -29,6 +29,7 @@ interface Progress {
   total: number;
   stage: string;
   failed: number;
+  lastError?: string;
 }
 
 const initials = (n: string) =>
@@ -51,6 +52,7 @@ export function Album({ tripName }: { tripName: string }) {
   const [afterSignIn, setAfterSignIn] = useState<'upload' | 'selfie' | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
   const [logoOk, setLogoOk] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const selfieRef = useRef<HTMLInputElement>(null);
@@ -146,10 +148,15 @@ export function Album({ tripName }: { tripName: string }) {
 
         setProgress({ ...prog, stage: `${label} · uploading & finding faces` });
         const facesP = detectFaces(big).catch(() => []);
-        const [b, s] = await Promise.all([
-          upload(`${base}.jpg`, bigJpeg.blob, { access: 'public', handleUploadUrl: '/api/upload', contentType: 'image/jpeg' }),
-          upload(`${base}-thumb.jpg`, smallJpeg.blob, { access: 'public', handleUploadUrl: '/api/upload', contentType: 'image/jpeg' }),
-        ]);
+        let b, s;
+        try {
+          [b, s] = await Promise.all([
+            upload(`${base}.jpg`, bigJpeg.blob, { access: 'public', handleUploadUrl: '/api/upload', contentType: 'image/jpeg' }),
+            upload(`${base}-thumb.jpg`, smallJpeg.blob, { access: 'public', handleUploadUrl: '/api/upload', contentType: 'image/jpeg' }),
+          ]);
+        } catch (e) {
+          throw new Error(`Upload to storage failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
         const faces = await facesP;
 
         const r = await fetch('/api/photos', {
@@ -164,19 +171,28 @@ export function Album({ tripName }: { tripName: string }) {
             faces: faces.map((f) => ({ descriptor: f.descriptor, box: f.box })),
           }),
         });
-        if (!r.ok) throw new Error((await r.json()).error || 'Save failed');
-        const { photo } = await r.json();
+        const saved = await r.text();
+        let parsed: { error?: string; photo?: Photo } = {};
+        try {
+          parsed = JSON.parse(saved);
+        } catch {
+          /* non-JSON */
+        }
+        if (!r.ok || !parsed.photo) throw new Error(`Saving failed (${r.status}): ${parsed.error || saved.slice(0, 120)}`);
+        const { photo } = parsed as { photo: Photo };
         added.push(photo);
         big.width = 0;
         small.width = 0;
       } catch (e) {
         console.error('Upload failed', file.name, e);
         prog.failed++;
+        prog.lastError = e instanceof Error ? e.message : String(e);
       }
       prog.done++;
       setProgress({ ...prog });
     }
     setProgress(null);
+    if (prog.failed) setLastError(prog.lastError || 'Unknown error');
     if (added.length) {
       // Show them straight away at the top of the current view, then refresh counts.
       setPhotos((prev) => [...added.filter((p) => tab === 'all' || p.category === tab), ...prev]);
@@ -382,6 +398,18 @@ export function Album({ tripName }: { tripName: string }) {
           if (f) processSelfie(f);
         }}
       />
+
+      {lastError && (
+        <div className="fixed inset-x-4 bottom-24 z-30 mx-auto max-w-md rounded-2xl border border-coral/40 bg-smoke/95 p-4 text-sm shadow-2xl backdrop-blur">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-semibold text-coral">Upload problem</p>
+              <p className="mt-1 select-all break-words text-cream/80">{lastError}</p>
+            </div>
+            <button onClick={() => setLastError(null)} className="shrink-0 text-cream/50">Close</button>
+          </div>
+        </div>
+      )}
 
       {/* Progress + toast */}
       {progress && (
