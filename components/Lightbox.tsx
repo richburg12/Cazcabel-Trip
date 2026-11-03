@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Photo } from '@/lib/db';
-import { btnDanger, btnGhost } from './Sheet';
+import { btnDanger, btnGhost, btnPrimary } from './Sheet';
 import { tagLabel } from '@/lib/tag-list';
 
 const when = (p: Photo) => {
@@ -28,6 +28,38 @@ export function Lightbox({
   const p = photos[index];
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Save to the phone: hand the file to the native share sheet (Save Image,
+  // AirDrop, Messages…) where available, otherwise download it. If the image
+  // can't be fetched cross-origin, fall back to opening it full size.
+  const save = async (photo: Photo) => {
+    setSaving(true);
+    try {
+      const res = await fetch(photo.url);
+      if (!res.ok) throw new Error('fetch');
+      const blob = await res.blob();
+      const name = `cazcabel-trip-${photo.id.slice(0, 8)}.jpg`;
+      const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
+      const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+      if (nav.canShare?.({ files: [file] })) {
+        await nav.share({ files: [file] });
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return; // user closed the share sheet
+      window.open(photo.url, '_blank', 'noopener');
+    } finally {
+      setSaving(false);
+    }
+  };
   const startX = useRef<number | null>(null);
 
   useEffect(() => {
@@ -82,8 +114,11 @@ export function Lightbox({
           </span>
         </div>
         <div className="mt-3 flex gap-2">
-          <a href={p.url} target="_blank" rel="noreferrer" className={`${btnGhost} flex-1 text-sm`}>
-            Open full size
+          <button onClick={() => save(p)} disabled={saving} className={`${btnPrimary} flex-1 text-sm`}>
+            {saving ? 'Preparing…' : 'Save'}
+          </button>
+          <a href={p.url} target="_blank" rel="noreferrer" className={`${btnGhost} text-sm`}>
+            Full size
           </a>
           {canDelete(p) &&
             (confirm ? (

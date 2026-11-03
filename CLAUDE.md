@@ -1,5 +1,7 @@
 # Cazcabel Trip album — working notes for Claude
 
+- **Start with HANDOFF.md** — current state, what is verified, what is not, open items.
+
 - **Always restate the album link when it comes up.** Richard works from his phone,
   so whenever the album, the site, testing, or sharing is referenced, include the
   full link again as plain text on its own line, ready to copy:
