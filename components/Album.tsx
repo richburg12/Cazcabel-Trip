@@ -43,6 +43,13 @@ interface Progress {
   lastError?: string;
 }
 
+// One entry per selected file, shown as a strip of thumbnails while uploading.
+interface QueueItem {
+  key: string;
+  preview: string; // object URL
+  status: 'pending' | 'working' | 'done' | 'failed';
+}
+
 const initials = (n: string) =>
   n
     .split(' ')
@@ -62,6 +69,11 @@ export function Album({ tripName }: { tripName: string }) {
   const [sheet, setSheet] = useState<'profile' | null>(null);
   const [afterSignIn, setAfterSignIn] = useState<'upload' | 'selfie' | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  // True from tapping "Add photos" until the browser hands us the files. On
+  // iPhone that gap can be long (iCloud downloads, HEIC conversion) and looks
+  // like nothing is happening, so we say so.
+  const [picking, setPicking] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   const [uploadMode, setUploadMode] = useState<'presigned' | 'token'>('presigned');
@@ -129,6 +141,15 @@ export function Album({ tripName }: { tripName: string }) {
     load(tab);
   }, [tab, me, load]);
 
+  // The picker's "cancel" event isn't in React's typings; listen natively.
+  useEffect(() => {
+    const el = fileRef.current;
+    if (!el) return;
+    const onCancel = () => setPicking(false);
+    el.addEventListener('cancel', onCancel);
+    return () => el.removeEventListener('cancel', onCancel);
+  }, []);
+
   // ---- uploading -----------------------------------------------------------
   const startUpload = () => {
     if (!me) {
@@ -138,20 +159,29 @@ export function Album({ tripName }: { tripName: string }) {
     }
     loadFaceApi().catch(() => {});
     fileRef.current?.click();
+    setPicking(true);
   };
 
   const processFiles = async (files: File[]) => {
+    setPicking(false);
     if (!me || files.length === 0) return;
     const prog: Progress = { done: 0, total: files.length, stage: 'Getting ready…', failed: 0 };
     setProgress({ ...prog });
+    const items: QueueItem[] = files.map((f, i) => ({ key: `${Date.now()}-${i}`, preview: URL.createObjectURL(f), status: 'pending' }));
+    setQueue(items);
+    const mark = (i: number, status: QueueItem['status']) =>
+      setQueue((q) => q.map((it, j) => (j === i ? { ...it, status } : it)));
     try {
       await loadFaceApi((s) => setProgress({ ...prog, stage: s }));
     } catch {
       say('Face models failed to load; photos will upload without face search.', 6000);
     }
     const added: Photo[] = [];
-    for (const file of files) {
+    const showsHere = (p: Photo) =>
+      tab === 'all' || p.category === tab || (tab.startsWith('tag:') && (p.tags || []).includes(tab.slice(4)));
+    for (const [idx, file] of files.entries()) {
       const label = `Photo ${prog.done + 1} of ${prog.total}`;
+      mark(idx, 'working');
       try {
         setProgress({ ...prog, stage: `${label} · preparing` });
         const takenAt = await readTakenAt(file);
@@ -198,26 +228,30 @@ export function Album({ tripName }: { tripName: string }) {
         if (!r.ok || !parsed.photo) throw new Error(`Saving failed (${r.status}): ${parsed.error || saved.slice(0, 120)}`);
         const { photo } = parsed as { photo: Photo };
         added.push(photo);
+        mark(idx, 'done');
+        // Straight into the grid so each finished photo is visible immediately.
+        if (showsHere(photo)) setPhotos((prev) => [photo, ...prev]);
+        setCounts((c) => ({ ...c, all: (c.all || 0) + 1, [photo.category]: (c[photo.category] || 0) + 1 }));
         big.width = 0;
         small.width = 0;
       } catch (e) {
         console.error('Upload failed', file.name, e);
+        mark(idx, 'failed');
         prog.failed++;
         prog.lastError = e instanceof Error ? e.message : String(e);
       }
       prog.done++;
       setProgress({ ...prog });
     }
+    // Leave the finished strip up for a moment so the ticks register.
+    await new Promise((r) => setTimeout(r, prog.failed ? 1500 : 900));
     setProgress(null);
+    setQueue((q) => {
+      q.forEach((it) => URL.revokeObjectURL(it.preview));
+      return [];
+    });
     if (prog.failed) setLastError(prog.lastError || 'Unknown error');
-    if (added.length) {
-      // Show them straight away at the top of the current view, then refresh counts.
-      setPhotos((prev) => [
-        ...added.filter((p) => tab === 'all' || p.category === tab || (tab.startsWith('tag:') && (p.tags || []).includes(tab.slice(4)))),
-        ...prev,
-      ]);
-      load(tab);
-    }
+    if (added.length) load(tab);
     say(prog.failed ? `${added.length} added · ${prog.failed} failed` : `${added.length} photo${added.length === 1 ? '' : 's'} added 🎉`);
   };
 
@@ -385,7 +419,7 @@ export function Album({ tripName }: { tripName: string }) {
       )}
 
       {/* Add photos */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[max(env(safe-area-inset-bottom),1rem)]">
+      <div className={`pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[max(env(safe-area-inset-bottom),1rem)] ${progress || picking ? 'invisible' : ''}`}>
         <button
           onClick={startUpload}
           disabled={!!progress}
@@ -431,17 +465,85 @@ export function Album({ tripName }: { tripName: string }) {
         </div>
       )}
 
-      {/* Progress + toast */}
+      {/* Waiting for the phone to hand over the files */}
+      {picking && !progress && (
+        <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center">
+          <div className="sheet safe-b w-full max-w-lg rounded-t-3xl border border-white/10 bg-smoke px-5 pt-5 shadow-2xl">
+            <div className="flex items-center gap-4">
+              <Spinner />
+              <div className="min-w-0">
+                <p className="font-display text-2xl tracking-wide text-honey">Getting your photos ready</p>
+                <p className="mt-1 text-sm leading-snug text-cream/65">
+                  Your phone prepares each picture before handing it over. With iCloud photos or slow internet this can
+                  take a little while. Keep this page open.
+                </p>
+              </div>
+            </div>
+            <button onClick={() => setPicking(false)} className="mt-4 w-full py-2 text-center text-xs text-cream/40">
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Upload progress */}
       {progress && (
-        <div className="fixed inset-x-4 bottom-24 z-30 mx-auto max-w-md rounded-2xl border border-white/10 bg-smoke/95 p-4 shadow-2xl backdrop-blur">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-cream/90">{progress.stage}</span>
-            <span className="text-cream/50">{progress.done}/{progress.total}</span>
+        <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center">
+          <div className="sheet safe-b w-full max-w-lg rounded-t-3xl border border-white/10 bg-smoke px-5 pt-5 shadow-2xl">
+            <div className="flex items-baseline justify-between">
+              <p className="font-display text-3xl tracking-wide text-honey">
+                {progress.done >= progress.total
+                  ? progress.failed
+                    ? 'Finished, with problems'
+                    : 'All done'
+                  : progress.total === 1
+                    ? 'Adding your photo'
+                    : `Adding ${progress.done + 1} of ${progress.total}`}
+              </p>
+              <span className="text-sm text-cream/50">{Math.round((progress.done / progress.total) * 100)}%</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full bg-honey transition-all duration-500"
+                style={{ width: `${Math.max(3, (progress.done / progress.total) * 100)}%` }}
+              />
+            </div>
+            {queue.length > 0 && (
+              <div className="no-scrollbar mt-4 flex gap-1.5 overflow-x-auto">
+                {queue.map((it) => (
+                  <div key={it.key} className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-ash">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={it.preview}
+                      alt=""
+                      className={`h-full w-full object-cover transition ${it.status === 'pending' ? 'opacity-35' : 'opacity-100'}`}
+                    />
+                    {it.status === 'working' && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                        <Spinner small />
+                      </div>
+                    )}
+                    {it.status === 'done' && (
+                      <div className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-honey text-xs font-bold text-ink">
+                        ✓
+                      </div>
+                    )}
+                    {it.status === 'failed' && (
+                      <div className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-coral text-xs font-bold text-ink">
+                        !
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="mt-3 text-sm text-cream/60">
+              {progress.done >= progress.total ? 'Your photos are in the album.' : progress.stage.replace(/^Photo \d+ of \d+ · /, '').replace(/^\w/, (c) => c.toUpperCase())}
+            </p>
+            <p className="mt-1 text-xs text-cream/35">
+              Each photo is resized and checked for faces on your phone, then uploaded. Keep this page open until it&rsquo;s done.
+            </p>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-            <div className="h-full bg-honey transition-all" style={{ width: `${Math.max(4, (progress.done / progress.total) * 100)}%` }} />
-          </div>
-          <p className="mt-2 text-xs text-cream/40">Keep this page open until it finishes.</p>
         </div>
       )}
       {toast && (
@@ -682,4 +784,10 @@ function BackfillButton() {
       {note && <p className="mt-2 text-xs text-cream/50">{note}</p>}
     </div>
   );
+}
+
+
+function Spinner({ small = false }: { small?: boolean }) {
+  const size = small ? 'h-5 w-5 border-2' : 'h-9 w-9 border-[3px]';
+  return <span className={`${size} inline-block shrink-0 animate-spin rounded-full border-honey/25 border-t-honey`} aria-label="Working" />;
 }
