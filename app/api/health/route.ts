@@ -10,6 +10,10 @@ export const dynamic = 'force-dynamic';
 // wired up. Behind the album cookie like everything else; never shows secrets.
 export async function GET() {
   const out: Record<string, unknown> = {
+    build: (process.env.VERCEL_GIT_COMMIT_SHA || 'local').slice(0, 7),
+    env: process.env.VERCEL_ENV || 'local',
+    // Names only, never values: anything that looks like a storage credential.
+    tokenVarsSeen: Object.keys(process.env).filter((k) => /BLOB|READ_WRITE|STORE/i.test(k)),
     albumToken: !!process.env.ALBUM_TOKEN,
     adminCode: !!process.env.ADMIN_CODE,
     blobToken: blobTokenName() || false,
