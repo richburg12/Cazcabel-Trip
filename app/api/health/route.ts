@@ -24,12 +24,34 @@ export async function GET() {
   };
   try {
     await ensureSchema();
-    const { rows } = await sql<{ profiles: number; photos: number; faces: number }>`
+    const { rows } = await sql<{ profiles: number; photos: number; faces: number; untagged: number; newest: string | null; db: string; host: string | null; now: string }>`
       SELECT (SELECT COUNT(*) FROM profiles)::int AS profiles,
              (SELECT COUNT(*) FROM photos)::int AS photos,
-             (SELECT COUNT(*) FROM faces)::int AS faces`;
+             (SELECT COUNT(*) FROM faces)::int AS faces,
+             (SELECT COUNT(*) FROM photos WHERE tagged_at IS NULL)::int AS untagged,
+             (SELECT MAX(created_at) FROM photos)::text AS newest,
+             current_database() AS db,
+             inet_server_addr()::text AS host,
+             NOW()::text AS now`;
+    const r = rows[0];
     out.database = 'ok';
-    out.counts = rows[0];
+    out.counts = { profiles: r.profiles, photos: r.photos, faces: r.faces, untagged: r.untagged };
+    out.newestPhoto = r.newest;
+    out.dbName = r.db;
+    out.dbServer = r.host;
+    out.dbTime = r.now;
+    // Which connection-string variables exist, and the host each points at (no credentials).
+    out.dbVars = Object.fromEntries(
+      Object.keys(process.env)
+        .filter((k) => /^(POSTGRES|DATABASE)_URL/.test(k))
+        .map((k) => {
+          try {
+            return [k, new URL(process.env[k] as string).host];
+          } catch {
+            return [k, 'unparseable'];
+          }
+        })
+    );
   } catch (e) {
     out.database = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
   }
